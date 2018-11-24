@@ -89,7 +89,7 @@ int main()
     }
     
     
-    Mat H = ransacGeneralAlternative(obj, scene);
+    Mat H = ransacGeneral(obj, scene);
 
     
     Mat K(2 * I1.cols, I1.rows, CV_8U);
