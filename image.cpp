@@ -40,7 +40,8 @@ Mat ransacGeneral(vector<Point2f> &obj, vector<Point2f> &scene) {
     Mat_<float> A, H, Z, bestH, s, u, vt, v;
     Z = Mat::zeros(1,9, CV_32F);
     Z.at<float>(8)=1;
-    cout << Z << endl;
+    
+    Z = Z.t();
     
     int sz = obj.size();
     
@@ -66,7 +67,7 @@ Mat ransacGeneral(vector<Point2f> &obj, vector<Point2f> &scene) {
         }
         computeA(A, obj, scene, a, b, c, d); // AH = 0
         
-        Z = Z.t();
+        
         solve(A, Z, H, DECOMP_SVD);
         if(H.size().width!=1) continue;
         H = H.reshape(0, 3);
