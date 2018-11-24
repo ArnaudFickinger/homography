@@ -7,7 +7,6 @@
 #include <iostream>
 
 #include "image.h"
-#include "homographie.hpp"
 
 
 using namespace std;
