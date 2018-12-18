@@ -52,8 +52,15 @@ public:
 	}
 };
 
+Point2f ransac(const vector<Point2f> Points);
+Mat panorama(int begin, int end);
+Mat panorama2(int begin, int end, int& start_las, int& end_las);
+Mat panorama3(int begin, int end, int start_las[], int end_las[]);
+void testRansac();
 void computeA(Mat &A, vector<Point2f> &obj, vector<Point2f> &scene, int a, int b, int c, int d);
+void computeAAlternative(Mat &A, vector<Point2f> &obj, vector<Point2f> &scene, int a, int b, int c, int d);
 Mat ransacGeneral(vector<Point2f> &obj, vector<Point2f> &scene);
+Mat ransacGeneralAlternative(vector<Point2f> &obj, vector<Point2f> &scene);
 
 // Correlation
 double NCC(const Image<float>& I1,Point m1,const Image<float>& I2,Point m2,int n);

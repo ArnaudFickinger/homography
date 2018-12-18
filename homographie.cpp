@@ -13,7 +13,25 @@
 using namespace std;
 using namespace cv;
 
-int main_hom()
+//to compute the panorama using our RANSAC algorithm
+
+int main(){
+    int start_last [8];
+    int end_last [8];
+    for (int i = 0; i< 8; i++){
+        Mat pano = panorama2(4*i+29, 4*i+29+3, start_last[i], end_last[i]);
+        imwrite("panobb"+to_string(i)+".jpg", pano);
+    }
+    for (int i = 1; i< 2; i++){
+        Mat pano = panorama3(4*i, 4*i+2, start_last, end_last);
+        imwrite("panoexp3"+to_string(i)+".jpg", pano);
+    }
+    return 0 ;
+}
+
+//to compute the 3 images
+
+int main_hom_3img()
 {
 	Image<uchar> I1 = Image<uchar>(imread("image0006.jpg", CV_LOAD_IMAGE_GRAYSCALE));
 	Image<uchar> I2 = Image<uchar>(imread("image0007.jpg", CV_LOAD_IMAGE_GRAYSCALE));
@@ -225,12 +243,12 @@ int main_hom()
     
     H1 = findHomography( scene, obj, CV_RANSAC );
     
-    cout << "H1" << H1;
+//    cout << "H1" << H1;
     
     H = ransacGeneralAlternative(scene, obj);
     Mat Hinv = ransacGeneralAlternative(obj, scene);
     
-    cout << "H" << H;
+//    cout << "H" << H;
     
     
     // Mat K(2 * I1.cols, I1.rows, CV_8U);

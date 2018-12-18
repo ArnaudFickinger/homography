@@ -15,6 +15,447 @@
 using namespace std;
 using namespace cv;
 
+//stitch images of a panorama and save the positions of the last image
+
+Mat panorama2(int begin, int end, int& start_las, int& end_las){
+    
+    int len = end - begin + 1;
+    Image<uchar> I1;
+    
+    I1 = Image<uchar>(imread("IMG_00"+to_string(begin)+".jpg", CV_LOAD_IMAGE_GRAYSCALE));
+    
+    
+    Mat1b pano(len*I1.cols, I1.rows, uchar(0));;
+    Mat trans_mat = (Mat_<double>(2, 3) << 1, 0, 0, 0, 1, 0);
+    warpAffine(I1, pano, trans_mat, Size( len*I1.cols, I1.rows));
+    
+    int start_last = 0;
+    int end_last = I1.cols;
+    
+    Mat d1, d2, J, match;
+    vector<KeyPoint> m1, m2;
+    vector< vector<DMatch> > nn_matches;
+    vector<KeyPoint> matched1, matched2, inliers1, inliers2;
+    vector<DMatch> good_matches;
+    vector<DMatch> good_matches2;
+    vector<Point2f> obj;
+    vector<Point2f> scene;
+    
+    for(int i = begin+1; i<=end; i++){
+        
+        Image<uchar> I2;
+        
+        I2 = Image<uchar>(imread("IMG_00"+to_string(i)+".jpg", CV_LOAD_IMAGE_GRAYSCALE));
+        
+       
+        Ptr<AKAZE> akaze = AKAZE::create();
+       
+        m1.clear();
+        m2.clear();
+        
+        
+        akaze->detectAndCompute(pano, noArray(), m1, d1);
+        akaze->detectAndCompute(I2, noArray(), m2, d2);
+        
+        
+        
+        float param1 = 0.8f;
+        float param2 = 10.f;
+        
+        BFMatcher matcher(NORM_HAMMING);
+        nn_matches.clear();
+        matcher.knnMatch(d1, d2, nn_matches, 2);
+        
+        matched1.clear(); matched2.clear(); inliers1.clear(); inliers2.clear();
+        good_matches.clear();
+        double min = nn_matches[0][0].distance;
+        for(size_t i = 0; i < nn_matches.size(); i++) {
+            DMatch first = nn_matches[i][0];
+            float dist1 = nn_matches[i][0].distance;
+            float dist2 = nn_matches[i][1].distance;
+            
+            if(dist1 < param1 * dist2) {
+                if(dist1<min){
+                    min = dist1;
+                }
+                matched1.push_back(m1[first.queryIdx]);
+                matched2.push_back(m2[first.trainIdx]);
+                good_matches.push_back(first);
+            }
+        }
+        
+        good_matches2.clear();
+        for(size_t i = 0; i < nn_matches.size(); i++) {
+            DMatch first = nn_matches[i][0];
+            float dist1 = nn_matches[i][0].distance;
+            
+            if(dist1 < param2*min) {
+                
+                good_matches2.push_back(first);
+            }
+        }
+        
+        
+        Mat match;
+        drawMatches(pano, m1, I2, m2, good_matches2, match);
+        
+        obj.clear();
+        scene.clear();
+        for( int j = 0; j < good_matches2.size(); j++ )
+        {
+            if(m1[ good_matches2[j].queryIdx ].pt.x>=start_last-100){
+                obj.push_back( m1[ good_matches2[j].queryIdx ].pt );
+                scene.push_back( m2[ good_matches2[j].trainIdx ].pt );
+            }
+            
+        }
+        
+        
+        Mat H = ransacGeneralAlternative(scene, obj);
+        
+        Mat1b warp(pano.cols, pano.rows, uchar(0));
+       
+        warpPerspective(I2, warp, H, Size(pano.cols, pano.rows));
+        
+        
+        for (int h = end_last; h < pano.cols  ; h++) {
+            bool end = true;
+            for (int e = 0; e < pano.rows; e++) {
+                //                cout<<i<<" "<<j<<endl;
+                if (pano(e,h) == 0 && warp(e,h) != 0){
+                    end = false;
+                    pano(e,h) = warp(e,h);
+                }
+            }
+            if(end){
+                start_last = end_last;
+                end_last = h;
+                break;
+            }
+        }
+        
+    }
+    
+    start_las =start_last;
+    end_las = end_last;
+    
+    
+    return pano;
+}
+
+//stitch subsets of a panorama
+
+Mat panorama3(int begin, int end, int start_las[], int end_las[]){
+    //    int begin = 29;
+    //    int end = 60;
+    int len = end - begin + 1;
+    Image<uchar> I1;
+    
+    I1 = Image<uchar>(imread("panobb"+to_string(begin)+".jpg", CV_LOAD_IMAGE_GRAYSCALE));
+    
+    
+    //    cout << "image00"+to_string(begin)+".jpg" << end;
+    Mat1b pano(len*I1.cols, I1.rows, uchar(0));;
+    Mat trans_mat = (Mat_<double>(2, 3) << 1, 0, 0, 0, 1, 0);
+    warpAffine(I1, pano, trans_mat, Size( len*I1.cols, I1.rows));
+    
+    //    imshow("pano",pano);
+    //    waitKey(0);
+    
+    int start_last = start_las[0];
+    int end_last = end_las[0];
+    
+    int img_len = 708;
+    
+    Mat d1, d2, J, match;
+    vector<KeyPoint> m1, m2;
+    vector< vector<DMatch> > nn_matches;
+    vector<KeyPoint> matched1, matched2, inliers1, inliers2;
+    vector<DMatch> good_matches;
+    vector<DMatch> good_matches2;
+    vector<Point2f> obj;
+    vector<Point2f> scene;
+    
+    for(int i = begin+1; i<=end; i++){
+        
+        Image<uchar> I2;
+        
+        I2 = Image<uchar>(imread("panobb"+to_string(i)+".jpg", CV_LOAD_IMAGE_GRAYSCALE));
+        
+        //        cout << i <<endl;
+        
+        //        namedWindow("I1", 1);
+        //        namedWindow("I2", 1);
+        //        imshow("I1", I1);
+        //        imshow("I2", I2);
+        
+        //Ptr<AKAZE> D = AKAZE::create();
+        Ptr<AKAZE> akaze = AKAZE::create();
+        // ...
+        //vector<KeyPoint>
+        
+        m1.clear();
+        m2.clear();
+        // ...
+        
+        
+        akaze->detectAndCompute(pano, noArray(), m1, d1);
+        akaze->detectAndCompute(I2, noArray(), m2, d2);
+        
+        
+        //Mat J;
+        //drawKeypoints(...
+        
+        
+        
+        //        drawKeypoints(I1, m1, J);
+        //        imshow("J", J);
+        
+        //BFMatcher M ...
+        
+        float param1 = 0.8f;
+        float param2 = 10.f;
+        
+        BFMatcher matcher(NORM_HAMMING);
+        nn_matches.clear();
+        matcher.knnMatch(d1, d2, nn_matches, 2);
+        
+        matched1.clear(); matched2.clear(); inliers1.clear(); inliers2.clear();
+        good_matches.clear();
+        double min = nn_matches[0][0].distance;
+        for(size_t i = 0; i < nn_matches.size(); i++) {
+            DMatch first = nn_matches[i][0];
+            float dist1 = nn_matches[i][0].distance;
+            float dist2 = nn_matches[i][1].distance;
+            
+            if(dist1 < param1 * dist2) {
+                if(dist1<min){
+                    min = dist1;
+                }
+                matched1.push_back(m1[first.queryIdx]);
+                matched2.push_back(m2[first.trainIdx]);
+                good_matches.push_back(first);
+            }
+        }
+        
+        good_matches2.clear();
+        for(size_t i = 0; i < nn_matches.size(); i++) {
+            DMatch first = nn_matches[i][0];
+            float dist1 = nn_matches[i][0].distance;
+            //            float dist2 = nn_matches[i][1].distance;
+            
+            if(dist1 < param2*min) {
+                
+                good_matches2.push_back(first);
+            }
+        }
+        
+        // drawMatches ...
+        
+        Mat match;
+        drawMatches(pano, m1, I2, m2, good_matches2, match);
+        //                       imshow("match", match);
+        //                     waitKey(0);
+        
+        // Mat H = findHomography(...
+        
+        //        cout << "end " << end_last << "start" << start_last << endl;
+        
+        obj.clear();
+        scene.clear();
+        for( int j = 0; j < good_matches2.size(); j++ )
+        {
+            
+            if(m1[ good_matches2[j].queryIdx ].pt.x>=start_last-50 && m2[ good_matches2[j].trainIdx ].pt.x <= img_len+50){
+                //                cout << m1[ good_matches2[j].queryIdx ].pt.x << endl;
+                obj.push_back( m1[ good_matches2[j].queryIdx ].pt );
+                scene.push_back( m2[ good_matches2[j].trainIdx ].pt );
+            }
+            
+        }
+        
+        //    cout << obj << endl;
+        //    cout << scene << endl;
+        
+        //        Mat H1 = findHomography( scene, obj, CV_RANSAC );
+        
+        //        cout << "H1" << H1;
+        
+        Mat H = ransacGeneralAlternative(scene, obj);
+        
+        //        cout << "H" << H;
+        
+        //        Mat1b warp((I1.cols)*(i-begin+1), pano.rows, uchar(0));
+        Mat1b warp(pano.cols, pano.rows, uchar(0));
+        //Mat trans_mat = (Mat_<double>(2, 3) << 1, 0, 0, 0, 1, 0);
+        //    warpAffine(K, Kb, trans_mat, Size( K.cols, 2 * K.rows));
+        //        warpPerspective(I2, warp, H, Size((I1.cols)*(i-begin+1), pano.rows));
+        warpPerspective(I2, warp, H, Size(pano.cols, pano.rows));
+        
+        //        imshow("warp", warp) ;
+        //        waitKey(0);
+        
+        
+        //        imshow("I1I2kb", Kb) ;
+        //        Mat K2b;
+        //warpPerspective(I3, K2b, H, Kb.size());
+        //        warpAffine(I3, K2b, trans_mat, Size( K.cols, 2 * K.rows));
+        //        imshow("I1I2kb2", K2b) ;
+        
+        //        cout<<pano.cols<<endl;
+        
+        int nb_null_cols = 0;
+        for (int h = end_last; h < pano.cols  ; h++) {
+            bool end = true;
+            for (int e = 0; e < pano.rows; e++) {
+                //                cout<<"draw?" <<e<<" "<<h<<endl;
+                if (warp(e,h) != 0){
+                    //                    cout<<"draw" <<e<<" "<<h<<endl;
+                    end = false;
+                    if (pano(e,h) == 0){
+                        pano(e,h) = warp(e,h);
+                    }
+                }
+            }
+            if(end){
+                nb_null_cols ++;
+            }
+            if(nb_null_cols == 50){
+                start_last = h - (end_las[i] - start_las[i]);
+                end_last = h;
+                break;
+            }
+        }
+        
+        //                imshow("pano", pano) ;
+        //                waitKey(0);
+        //        imwrite("panob"+to_string(i)+".jpg", pano);
+        
+    }
+    
+    
+    return pano;
+}
+
+//generic ransac algorithm
+
+Mat ransacGeneralAlternative(vector<Point2f> &obj, vector<Point2f> &scene) {
+    int iter = 1000; // Reset this to 100 later
+    float threshDist = 1.0; // Threshold of distances between points and line
+    float ransacRatio = 0.80; // Threshold of number of inliers to assert model fits data well
+    float numSamples = (float)obj.size();
+    float bestRatio = 0; // Best ratio
+    float num;
+    
+    Point2f p1, p2;
+    
+    //solve(InputArray src1, InputArray src2, OutputArray dst, int flags=DECOMP_LU);
+    
+    Mat_<float> A, H, Z, bestH, s, u, vt, v;
+    Z = Mat::zeros(1,9, CV_32F);
+    Z.at<float>(8)=1;
+    //    cout << Z << endl;
+    
+    
+    int sz = obj.size();
+    
+    int a,b,c,d;
+    vector<int> inliers;
+    
+    vector<float> objPoint;
+    vector<float> scnPoint;
+    Z = Z.t();
+    
+    for (int i = 0; i < iter; i++) {
+        //        random_unique(Points.begin(), Points.end(), 4);
+        a = rand() % sz;
+        b = rand() % sz;
+        while (b == a){
+            b = rand() % sz;
+        }
+        c = rand() % sz;
+        while (c == a || c == b){
+            c = rand() % sz;
+        }
+        d = rand() % sz;
+        while (d == a || d == b || d == c){
+            d = rand() % sz;
+        }
+        
+        computeAAlternative(A, obj, scene, a, b, c, d); // AH = 0
+        //        cout << A << endl;
+        //SVD::compute(A, s, u, vt);
+        //        cout << vt.size()  << endl;
+        //
+        //        cout << s << endl;
+        //        cout << vt << endl;
+        //        vt.row(7).copyTo(H);
+        //        cout << H << endl;
+        //        cout <<a<<endl;
+        
+        solve(A, Z, H, DECOMP_SVD);
+        //                cout << H.size()  << endl;
+        if(H.size().width!=1) continue;
+        H = H.reshape(0, 3);
+        //        cout << H << endl;
+        //        cout << H.size()  << endl;
+        //        cout << "[ INFO ] Iteration " << i << endl;
+        
+        
+        num = 0;
+        Point2f iP;
+        float dist;
+        for (int i = 0; i<obj.size(); i++) {
+            if(i == a || i == b || i == c || i == d){
+                continue;
+            }
+            objPoint.clear();
+            scnPoint.clear();
+            
+            //                iP = getInterceptPoint(m, c, candidate);
+            objPoint.push_back(obj[i].x);
+            objPoint.push_back(obj[i].y);
+            objPoint.push_back(1);
+            
+            scnPoint.push_back(scene[i].x);
+            scnPoint.push_back(scene[i].y);
+            scnPoint.push_back(1);
+            
+            
+            double dist = norm(Mat_<float>(scnPoint), H * Mat_<float>(objPoint));
+            //            cout << "dist " << dist << endl;
+            
+            //            dist = sqrt(pow(iP.x - candidate.x, 2) +
+            //                        pow(iP.y - candidate.y, 2));
+            if (dist < threshDist) {
+                inliers.push_back(i);
+                num++;
+            }
+            
+        }
+        
+        //        cout << "num/numSamples " << num/numSamples << endl;
+        if (num/numSamples > bestRatio) {
+            bestRatio = num/numSamples;
+            bestH = H;
+        }
+        
+        if (num > numSamples * ransacRatio) {
+            //            cout << "Found good enough model" << endl;
+            break;
+        }
+    }
+    
+    // Since we cannot return a tuple, we will encode the slope
+    // and intercept as a Point2f(bestM, bestC).
+    
+    cout << bestH << endl;
+    return bestH;
+}
+
+
+
+
 template<typename Iter, typename RandomGenerator>
 Iter select_randomly(Iter start, Iter end, RandomGenerator& g) {
     std::uniform_int_distribution<> dis(0, std::distance(start, end) - 1);
@@ -176,119 +617,158 @@ void computeAAAlternative(Mat &A, vector<Point2f> &obj, vector<Point2f> &scene, 
 }
 
 
-Mat ransacGeneralAlternative(vector<Point2f> &obj, vector<Point2f> &scene) {
-    int iter = 1000; // Reset this to 100 later
-    float threshDist = 1.0; // Threshold of distances between points and line
-    float ransacRatio = 0.80; // Threshold of number of inliers to assert model fits data well
-    float numSamples = (float)obj.size();
-    float bestRatio = 0; // Best ratio
-    float num;
+Mat panorama(int begin, int end){
     
-    Point2f p1, p2;
+    int len = end - begin + 1;
+    Image<uchar> I1 = Image<uchar>(imread("IMG_00"+to_string(begin)+".jpg", CV_LOAD_IMAGE_GRAYSCALE));
+    cout << "image00"+to_string(begin)+".jpg" << end;
+    Mat1b pano(len*I1.cols, I1.rows, uchar(0));;
+    Mat trans_mat = (Mat_<double>(2, 3) << 1, 0, 0, 0, 1, 0);
+    warpAffine(I1, pano, trans_mat, Size( len*I1.cols, I1.rows));
     
-    //solve(InputArray src1, InputArray src2, OutputArray dst, int flags=DECOMP_LU);
+    int start_last = 0;
+    int end_last = I1.cols;
     
-    Mat_<float> A, H, Z, bestH, s, u, vt, v;
-    Z = Mat::zeros(1,9, CV_32F);
-    Z.at<float>(8)=1;
-    cout << Z << endl;
+    Mat d1, d2, J, match;
+    vector<KeyPoint> m1, m2;
+    vector< vector<DMatch> > nn_matches;
+    vector<KeyPoint> matched1, matched2, inliers1, inliers2;
+    vector<DMatch> good_matches;
+    vector<DMatch> good_matches2;
+    vector<Point2f> obj;
+    vector<Point2f> scene;
     
-    
-    int sz = obj.size();
-    
-    int a,b,c,d;
-    vector<int> inliers;
-    
-    vector<float> objPoint;
-    vector<float> scnPoint;
-    Z = Z.t();
-    
-    for (int i = 0; i < iter; i++) {
-        //        random_unique(Points.begin(), Points.end(), 4);
-        a = rand() % sz;
-        b = rand() % sz;
-        while (b == a){
-            b = rand() % sz;
-        }
-        c = rand() % sz;
-        while (c == a || c == b){
-            c = rand() % sz;
-        }
-        d = rand() % sz;
-        while (d == a || d == b || d == c){
-            d = rand() % sz;
-        }
+    for(int i = begin+1; i<=end; i++){
         
-        computeAAlternative(A, obj, scene, a, b, c, d); // AH = 0
-        //        cout << A << endl;
-        //SVD::compute(A, s, u, vt);
-//        cout << vt.size()  << endl;
-//
-//        cout << s << endl;
-//        cout << vt << endl;
-//        vt.row(7).copyTo(H);
-//        cout << H << endl;
-        cout <<a<<endl;
+        Image<uchar> I2 = Image<uchar>(imread("IMG_00"+to_string(i)+".jpg", CV_LOAD_IMAGE_GRAYSCALE));
+        cout << i <<endl;
         
-         solve(A, Z, H, DECOMP_SVD);
-                cout << H.size()  << endl;
-        if(H.size().width!=1) continue;
-        H = H.reshape(0, 3);
-        cout << H << endl;
-        //        cout << H.size()  << endl;
-        cout << "[ INFO ] Iteration " << i << endl;
+//        namedWindow("I1", 1);
+//        namedWindow("I2", 1);
+//        imshow("I1", I1);
+//        imshow("I2", I2);
+        
+        //Ptr<AKAZE> D = AKAZE::create();
+        Ptr<AKAZE> akaze = AKAZE::create();
+        // ...
+        //vector<KeyPoint>
+        
+        m1.clear();
+        m2.clear();
+        // ...
         
         
-        num = 0;
-        Point2f iP;
-        float dist;
-        for (int i = 0; i<obj.size(); i++) {
-            if(i == a || i == b || i == c || i == d){
-                continue;
+        akaze->detectAndCompute(pano, noArray(), m1, d1);
+        akaze->detectAndCompute(I2, noArray(), m2, d2);
+        
+        
+        //Mat J;
+        //drawKeypoints(...
+        
+        
+        
+//        drawKeypoints(I1, m1, J);
+//        imshow("J", J);
+        
+        //BFMatcher M ...
+        
+        BFMatcher matcher(NORM_HAMMING);
+        nn_matches.clear();
+        matcher.knnMatch(d1, d2, nn_matches, 2);
+        
+        matched1.clear(); matched2.clear(); inliers1.clear(); inliers2.clear();
+        good_matches.clear();
+        double min = nn_matches[0][0].distance;
+        for(size_t i = 0; i < nn_matches.size(); i++) {
+            DMatch first = nn_matches[i][0];
+            float dist1 = nn_matches[i][0].distance;
+            float dist2 = nn_matches[i][1].distance;
+            
+            if(dist1 < 0.8f * dist2) {
+                if(dist1<min){
+                    min = dist1;
+                }
+                matched1.push_back(m1[first.queryIdx]);
+                matched2.push_back(m2[first.trainIdx]);
+                good_matches.push_back(first);
             }
-            objPoint.clear();
-            scnPoint.clear();
+        }
+        
+        good_matches2.clear();
+        for(size_t i = 0; i < nn_matches.size(); i++) {
+            DMatch first = nn_matches[i][0];
+            float dist1 = nn_matches[i][0].distance;
+//            float dist2 = nn_matches[i][1].distance;
             
-            //                iP = getInterceptPoint(m, c, candidate);
-            objPoint.push_back(obj[i].x);
-            objPoint.push_back(obj[i].y);
-            objPoint.push_back(1);
-            
-            scnPoint.push_back(scene[i].x);
-            scnPoint.push_back(scene[i].y);
-            scnPoint.push_back(1);
-            
-            
-            double dist = norm(Mat_<float>(scnPoint), H * Mat_<float>(objPoint));
-            cout << "dist " << dist << endl;
-            
-            //            dist = sqrt(pow(iP.x - candidate.x, 2) +
-            //                        pow(iP.y - candidate.y, 2));
-            if (dist < threshDist) {
-                inliers.push_back(i);
-                num++;
+            if(dist1 < 10*min) {
+                
+                good_matches2.push_back(first);
             }
-            
         }
         
-        cout << "num/numSamples " << num/numSamples << endl;
-        if (num/numSamples > bestRatio) {
-            bestRatio = num/numSamples;
-            bestH = H;
+        // drawMatches ...
+        
+        Mat match;
+        drawMatches(pano, m1, I2, m2, good_matches2, match);
+        imshow("match", match);
+        waitKey(0);
+        
+        // Mat H = findHomography(...
+        
+        
+        obj.clear();
+        scene.clear();
+        for( int j = 0; j < good_matches2.size(); j++ )
+        {
+            obj.push_back( m1[ good_matches2[j].queryIdx ].pt );
+            scene.push_back( m2[ good_matches2[j].trainIdx ].pt );
         }
         
-        if (num > numSamples * ransacRatio) {
-            cout << "Found good enough model" << endl;
-            break;
+        //    cout << obj << endl;
+        //    cout << scene << endl;
+        
+//        Mat H1 = findHomography( scene, obj, CV_RANSAC );
+        
+//        cout << "H1" << H1;
+        
+        Mat H = ransacGeneralAlternative(scene, obj);
+        
+        cout << "H" << H;
+        
+//        Mat1b warp((I1.cols)*(i-begin+1), pano.rows, uchar(0));
+        Mat1b warp(pano.cols, pano.rows, uchar(0));
+        //Mat trans_mat = (Mat_<double>(2, 3) << 1, 0, 0, 0, 1, 0);
+        //    warpAffine(K, Kb, trans_mat, Size( K.cols, 2 * K.rows));
+//        warpPerspective(I2, warp, H, Size((I1.cols)*(i-begin+1), pano.rows));
+        warpPerspective(I2, warp, H, Size(pano.cols, pano.rows));
+        
+//        imshow("I1I2kb", Kb) ;
+//        Mat K2b;
+        //warpPerspective(I3, K2b, H, Kb.size());
+//        warpAffine(I3, K2b, trans_mat, Size( K.cols, 2 * K.rows));
+//        imshow("I1I2kb2", K2b) ;
+        
+        cout<<pano.cols<<endl;
+        
+        for (int h = 0; h < pano.cols ; h++) {
+            for (int e = 0; e < pano.rows; e++) {
+//                cout<<i<<" "<<j<<endl;
+                if (pano(e,h) == 0 && warp(e,h) != 0){
+                    pano(e,h) = warp(e,h);
+                }
+            }
         }
+        
+        imshow("pano", pano) ;
+        waitKey(0);
+        imwrite("pano"+to_string(i)+".jpg", pano);
+        
     }
     
-    // Since we cannot return a tuple, we will encode the slope
-    // and intercept as a Point2f(bestM, bestC).
-    
-    cout << bestH << endl;
-    return bestH;
+    return pano;
 }
+
+
 
 
 Mat ransacGeneral(vector<Point2f> &obj, vector<Point2f> &scene) {
